@@ -13,6 +13,8 @@ import type {
   UserSkillInstall,
 } from "@/features/capabilities/skills/types";
 import { skillsService } from "@/features/capabilities/skills/api/skills-api";
+import { slashCommandsService } from "@/features/capabilities/slash-commands/api/slash-commands-api";
+import type { SlashCommandSuggestion } from "@/features/capabilities/slash-commands/types";
 import type { ProjectItem, TaskHistoryItem } from "@/features/projects/types";
 import {
   projectsService,
@@ -26,6 +28,7 @@ export interface StartupPreloadState {
   mcpInstalls: UserMcpInstall[];
   skills: Skill[];
   skillInstalls: UserSkillInstall[];
+  slashCommandSuggestions: SlashCommandSuggestion[];
   plugins: Plugin[];
   pluginInstalls: UserPluginInstall[];
 }
@@ -72,6 +75,11 @@ export function startStartupPreload(): Promise<void> {
     loadPreloadKey("mcpInstalls", () => mcpService.listInstalls()),
     loadPreloadKey("skills", () => skillsService.listSkills()),
     loadPreloadKey("skillInstalls", () => skillsService.listInstalls()),
+    loadPreloadKey("slashCommandSuggestions", () =>
+      slashCommandsService.listSuggestions({
+        revalidate: 0,
+      }),
+    ),
     loadPreloadKey("plugins", () => pluginsService.listPlugins()),
     loadPreloadKey("pluginInstalls", () => pluginsService.listInstalls()),
   ]).then(() => undefined);

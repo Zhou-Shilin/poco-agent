@@ -1,5 +1,5 @@
 import { apiClient, API_ENDPOINTS } from "@/services/api-client";
-import { SLASH_COMMAND_SUGGESTIONS_INVALIDATED_EVENT } from "@/features/capabilities/slash-commands/api/slash-commands-api";
+import { markSlashCommandSuggestionsInvalidated } from "@/features/capabilities/slash-commands/api/suggestions-state";
 import type {
   SkillInstallCreateInput,
   SkillInstallUpdateInput,
@@ -16,8 +16,7 @@ import type {
 } from "@/features/capabilities/skills/types";
 
 function emitSlashCommandSuggestionsInvalidated(): void {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new Event(SLASH_COMMAND_SUGGESTIONS_INVALIDATED_EVENT));
+  markSlashCommandSuggestionsInvalidated();
 }
 
 export const skillsService = {

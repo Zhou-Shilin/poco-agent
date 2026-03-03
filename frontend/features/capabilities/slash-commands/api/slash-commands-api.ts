@@ -5,14 +5,12 @@ import type {
   SlashCommandSuggestion,
   SlashCommandUpdateInput,
 } from "@/features/capabilities/slash-commands/types";
+import {
+  markSlashCommandSuggestionsInvalidated,
+  SLASH_COMMAND_SUGGESTIONS_INVALIDATED_EVENT,
+} from "@/features/capabilities/slash-commands/api/suggestions-state";
 
-export const SLASH_COMMAND_SUGGESTIONS_INVALIDATED_EVENT =
-  "poco:slash-command-suggestions-invalidated";
-
-function emitSlashCommandSuggestionsInvalidated(): void {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new Event(SLASH_COMMAND_SUGGESTIONS_INVALIDATED_EVENT));
-}
+export { SLASH_COMMAND_SUGGESTIONS_INVALIDATED_EVENT };
 
 export const slashCommandsService = {
   list: async (options?: { revalidate?: number }): Promise<SlashCommand[]> => {
@@ -49,7 +47,7 @@ export const slashCommandsService = {
       API_ENDPOINTS.slashCommands,
       input,
     );
-    emitSlashCommandSuggestionsInvalidated();
+    markSlashCommandSuggestionsInvalidated();
     return created;
   },
 
@@ -61,7 +59,7 @@ export const slashCommandsService = {
       API_ENDPOINTS.slashCommand(commandId),
       input,
     );
-    emitSlashCommandSuggestionsInvalidated();
+    markSlashCommandSuggestionsInvalidated();
     return updated;
   },
 
@@ -69,7 +67,7 @@ export const slashCommandsService = {
     const removed = await apiClient.delete<Record<string, unknown>>(
       API_ENDPOINTS.slashCommand(commandId),
     );
-    emitSlashCommandSuggestionsInvalidated();
+    markSlashCommandSuggestionsInvalidated();
     return removed;
   },
 };

@@ -9,11 +9,47 @@ import {
   type RefObject,
 } from "react";
 
+import { slashCommandsService } from "@/features/capabilities/slash-commands/api/slash-commands-api";
 import {
-  slashCommandsService,
+  clearInflightSlashCommandSuggestionsRequest,
+  getCachedSlashCommandSuggestions,
+  getInflightSlashCommandSuggestionsRequest,
+  getSlashCommandSuggestionsInvalidatedAt,
+  hasFreshSlashCommandSuggestionsCache,
+  setCachedSlashCommandSuggestions,
+  setInflightSlashCommandSuggestionsRequest,
+  shouldSkipPreloadedSlashCommandSuggestions,
   SLASH_COMMAND_SUGGESTIONS_INVALIDATED_EVENT,
-} from "@/features/capabilities/slash-commands/api/slash-commands-api";
+} from "@/features/capabilities/slash-commands/api/suggestions-state";
 import type { SlashCommandSuggestion as BackendSlashCommandSuggestion } from "@/features/capabilities/slash-commands/types";
+import {
+  getStartupPreloadValue,
+  hasStartupPreloadValue,
+} from "@/lib/startup-preload";
+
+const SUGGESTION_CACHE_TTL_MS = 60_000;
+
+function readPreloadedSuggestions(): BackendSlashCommandSuggestion[] {
+  if (!hasStartupPreloadValue("slashCommandSuggestions")) return [];
+  return getStartupPreloadValue("slashCommandSuggestions") ?? [];
+}
+
+function seedCacheFromPreload(): BackendSlashCommandSuggestion[] {
+  const cached = getCachedSlashCommandSuggestions();
+  if (cached !== null) {
+    return cached;
+  }
+
+  if (shouldSkipPreloadedSlashCommandSuggestions()) {
+    return [];
+  }
+
+  const preload = readPreloadedSuggestions();
+  if (preload.length > 0) {
+    setCachedSlashCommandSuggestions(preload);
+  }
+  return preload;
+}
 
 export type SlashCommandSuggestionSource = "builtin" | "custom" | "skill";
 
@@ -58,24 +94,69 @@ export function useSlashCommandAutocomplete({
   onChange,
   textareaRef,
 }: UseSlashCommandAutocompleteParams) {
-  const [dynamicSuggestions, setDynamicSuggestions] = useState<
-    BackendSlashCommandSuggestion[]
-  >([]);
+  const preloadedSuggestionsRef = useRef<BackendSlashCommandSuggestion[]>(
+    seedCacheFromPreload(),
+  );
+  const preloadedSuggestions = preloadedSuggestionsRef.current;
+  const [dynamicSuggestions, setDynamicSuggestions] =
+    useState<BackendSlashCommandSuggestion[]>(preloadedSuggestions);
   const isMountedRef = useRef(true);
   const [dismissedToken, setDismissedToken] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
   const loadSuggestions = useCallback(async (forceFresh = false) => {
+    if (
+      !forceFresh &&
+      hasFreshSlashCommandSuggestionsCache(SUGGESTION_CACHE_TTL_MS)
+    ) {
+      const cached = getCachedSlashCommandSuggestions();
+      if (isMountedRef.current) {
+        setDynamicSuggestions(cached ?? []);
+      }
+      return;
+    }
+
+    const inflightRequest = getInflightSlashCommandSuggestionsRequest();
+    if (!forceFresh && inflightRequest) {
+      const invalidatedAtBeforeWait = getSlashCommandSuggestionsInvalidatedAt();
+      try {
+        const pending = await inflightRequest;
+        if (
+          getSlashCommandSuggestionsInvalidatedAt() > invalidatedAtBeforeWait
+        ) {
+          return;
+        }
+        if (!isMountedRef.current) return;
+        setDynamicSuggestions(pending);
+      } catch {
+        // Keep existing suggestions when pending request fails.
+      }
+      return;
+    }
+
+    const request = slashCommandsService.listSuggestions({
+      revalidate: 0,
+      cacheBust: forceFresh ? Date.now() : undefined,
+    });
+    const invalidatedAtAtRequestStart =
+      getSlashCommandSuggestionsInvalidatedAt();
+    setInflightSlashCommandSuggestionsRequest(request);
+
     try {
-      const list = await slashCommandsService.listSuggestions({
-        revalidate: 0,
-        cacheBust: forceFresh ? Date.now() : undefined,
-      });
+      const list = await request;
+      if (
+        getSlashCommandSuggestionsInvalidatedAt() > invalidatedAtAtRequestStart
+      ) {
+        return;
+      }
+      setCachedSlashCommandSuggestions(list);
       if (!isMountedRef.current) return;
       setDynamicSuggestions(list);
     } catch (error) {
       // Autocomplete should be best-effort and never break chat input showing/sending.
       console.warn("[SlashCommands] autocomplete list failed:", error);
+    } finally {
+      clearInflightSlashCommandSuggestionsRequest(request);
     }
   }, []);
 
@@ -87,13 +168,23 @@ export function useSlashCommandAutocomplete({
   }, []);
 
   useEffect(() => {
+    if (hasFreshSlashCommandSuggestionsCache(SUGGESTION_CACHE_TTL_MS)) {
+      setDynamicSuggestions(getCachedSlashCommandSuggestions() ?? []);
+      return;
+    }
+
+    if (preloadedSuggestions.length > 0) {
+      setDynamicSuggestions(preloadedSuggestions);
+      return;
+    }
+
     const timer = window.setTimeout(() => {
-      void loadSuggestions(true);
+      void loadSuggestions(false);
     }, 0);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [loadSuggestions]);
+  }, [loadSuggestions, preloadedSuggestions]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

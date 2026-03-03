@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { useT } from "@/lib/i18n/client";
 import { skillsService } from "@/features/capabilities/skills/api/skills-api";
+import { markSlashCommandSuggestionsInvalidated } from "@/features/capabilities/slash-commands/api/suggestions-state";
 import type {
   SkillImportCandidate,
   SkillImportCommitResponse,
@@ -344,6 +345,7 @@ export function SkillImportDialog({
       }
 
       toast.success(t("library.skillsImport.toasts.committed"));
+      markSlashCommandSuggestionsInvalidated();
       playInstallSound();
       await onImported?.();
       handleClose();
