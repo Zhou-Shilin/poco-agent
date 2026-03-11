@@ -292,6 +292,26 @@ class AgentExecutor:
             if not selected_model:
                 selected_model = os.environ["DEFAULT_MODEL"]
 
+            # Normalize ANTHROPIC_BASE_URL: strip trailing slash and /v1 suffix so that
+            # the SDK does not double-append /v1 when constructing request URLs.
+            _base_url = (
+                os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com"
+            ).strip().rstrip("/")
+            if _base_url.endswith("/v1"):
+                _base_url = _base_url[: -len("/v1")]
+            os.environ["ANTHROPIC_BASE_URL"] = _base_url
+
+            _api_key_set = bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
+            logger.info(
+                "claude_sdk_config",
+                extra={
+                    "base_url": _base_url,
+                    "api_key_set": _api_key_set,
+                    "model": selected_model,
+                    "session_id": self.session_id,
+                },
+            )
+
             options = ClaudeAgentOptions(
                 cwd=ctx.cwd,
                 resume=self.sdk_session_id,
